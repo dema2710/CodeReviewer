@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="uk" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Code Reviewer 🤖</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤖</text></svg>" />
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            mono: ['JetBrains Mono', 'Fira Code', 'SFMono-Regular', 'Consolas', 'monospace'],
+            sans: ['Inter', 'system-ui', '-apple-system', 'Segoe UI', 'sans-serif'],
+          },
+          colors: {
+            ink: {
+              900: '#0e1a2b',
+              850: '#122036',
+              800: '#172a44',
+              700: '#1e3556',
+              600: '#274369',
+              500: '#33537f',
+            },
+          },
+          animation: {
+            'fade-up': 'fadeUp .35s ease-out both',
+            'pulse-slow': 'pulse 3s cubic-bezier(.4,0,.6,1) infinite',
+          },
+          keyframes: {
+            fadeUp: {
+              '0%': { opacity: '0', transform: 'translateY(10px)' },
+              '100%': { opacity: '1', transform: 'translateY(0)' },
+            },
+          },
+        },
+      },
+    };
+  </script>
+
+  <style>
+    html { scroll-behavior: smooth; }
+    body {
+      background-color: #0e1a2b;
+      background-image:
+        radial-gradient(60rem 30rem at 15% -10%, rgba(56, 189, 248, .14), transparent 60%),
+        radial-gradient(50rem 30rem at 95% 0%, rgba(168, 85, 247, .13), transparent 60%);
+      background-attachment: fixed;
+    }
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: #122036; }
+    ::-webkit-scrollbar-thumb { background: #274369; border-radius: 8px; }
+    ::-webkit-scrollbar-thumb:hover { background: #33537f; }
+
+    textarea { tab-size: 2; }
+    .tab-active { background-color: #1e3556; color: #e2e8f0; box-shadow: 0 1px 0 0 rgba(255,255,255,.06) inset; }
+    .spinner {
+      width: 44px; height: 44px; border-radius: 9999px;
+      border: 3px solid rgba(148, 163, 184, .18);
+      border-top-color: #38bdf8;
+      animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .code-inline {
+      background: rgba(148,163,184,.12); padding: .08rem .35rem; border-radius: .3rem;
+      font-size: .85em; font-family: 'JetBrains Mono', Consolas, monospace; color: #7dd3fc;
+    }
+    .suggestion {
+      background: #0a1424; border: 1px solid #274369; border-left: 2px solid #38bdf8;
+      border-radius: .5rem; padding: .65rem .8rem; overflow-x: auto;
+      font-family: 'JetBrains Mono', Consolas, monospace; font-size: .78rem; line-height: 1.6;
+      color: #a5f3fc; white-space: pre-wrap; word-break: break-word;
+    }
+    .prose-mini strong { color: #e2e8f0; font-weight: 600; }
+  </style>
+</head>
+
+<body class="min-h-screen text-slate-300 font-sans antialiased">
+
+  <!-- ══ HEADER ══ -->
+  <header class="border-b border-white/5 backdrop-blur-sm sticky top-0 z-20 bg-ink-900/70">
+    <div class="max-w-5xl mx-auto px-5 py-4 flex items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-sky-500/20 to-purple-500/20 border border-white/10 grid place-items-center text-2xl">🤖</div>
+        <div>
+          <h1 class="text-lg sm:text-xl font-semibold text-slate-100 tracking-tight">AI Code Reviewer</h1>
+          <p class="text-xs text-slate-500">Автоматичний рев'ю коду на базі DeepSeek</p>
+        </div>
+      </div>
+      <div id="health" class="hidden sm:flex items-center gap-2 text-[11px] font-mono text-slate-500 border border-white/5 rounded-lg px-3 py-1.5 bg-ink-800/50">
+        <span class="w-1.5 h-1.5 rounded-full bg-slate-600" id="healthDot"></span>
+        <span id="healthText">перевірка…</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-5xl mx-auto px-5 py-8 sm:py-12">
+
+    <!-- ══ INPUT PANEL ══ -->
+    <section class="rounded-2xl border border-white/5 bg-ink-850/60 backdrop-blur-sm overflow-hidden">
+
+      <!-- Tabs -->
+      <div class="flex gap-1 p-1.5 border-b border-white/5 bg-ink-800/40">
+        <button data-tab="code" class="tab-btn tab-active flex-1 sm:flex-none sm:px-5 py-2.5 rounded-lg text-sm font-medium text-slate-400 hover:text-slate-200 transition flex items-center justify-center gap-2">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg>
+          Ввести код
+        </button>
+        <button data-tab="github" class="tab-btn flex-1 sm:flex-none sm:px-5 py-2.5 rounded-lg text-sm font-medium text-slate-400 hover:text-slate-200 transition flex items-center justify-center gap-2">
+          <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 .5C5.73.5.5 5.73.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.55v-2.1c-3.2.7-3.88-1.37-3.88-1.37-.53-1.34-1.29-1.7-1.29-1.7-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.7 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11 11 0 0 1 5.79 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.12 3.05.74.81 1.18 1.84 1.18 3.1 0 4.43-2.69 5.4-5.25 5.69.41.36.78 1.06.78 2.14v3.17c0 .3.2.67.8.55A11.5 11.5 0 0 0 23.5 12C23.5 5.73 18.27.5 12 .5Z"/></svg>
+          GitHub Repo
+        </button>
+      </div>
+
+      <!-- Panel: code -->
+      <div id="panel-code" class="p-4 sm:p-5">
+        <div class="flex items-center justify-between gap-3 mb-3 flex-wrap">
+          <label for="language" class="text-xs font-medium text-slate-400 uppercase tracking-wider">Мова програмування</label>
+          <select id="language" class="bg-ink-800 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-slate-300 focus:outline-none focus:border-sky-500/60 focus:ring-1 focus:ring-sky-500/30 cursor-pointer">
+            <option value="auto">🔍 Визначити автоматично</option>
+            <option value="Python">Python</option>
+            <option value="JavaScript">JavaScript</option>
+            <option value="TypeScript">TypeScript</option>
+            <option value="C++">C++</option>
+            <option value="C#">C#</option>
+            <option value="Java">Java</option>
+            <option value="Go">Go</option>
+            <option value="Rust">Rust</option>
+            <option value="PHP">PHP</option>
+            <option value="Ruby">Ruby</option>
+            <option value="Swift">Swift</option>
+            <option value="Kotlin">Kotlin</option>
+            <option value="SQL">SQL</option>
+            <option value="HTML/CSS">HTML/CSS</option>
+          </select>
+        </div>
+
+        <div class="relative rounded-xl border border-white/10 bg-ink-900 overflow-hidden focus-within:border-sky-500/50 focus-within:ring-1 focus-within:ring-sky-500/20 transition">
+          <div class="flex items-center gap-1.5 px-4 py-2.5 border-b border-white/5 bg-ink-800/40">
+            <span class="w-2.5 h-2.5 rounded-full bg-red-500/60"></span>
+            <span class="w-2.5 h-2.5 rounded-full bg-amber-500/60"></span>
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500/60"></span>
+            <span class="ml-2 text-[11px] font-mono text-slate-600">your_code.txt</span>
+          </div>
+          <textarea id="code" rows="16" spellcheck="false" placeholder="// Вставте код тут…
+function calculateTotal(items) {
+  let total = 0;
+  for (var i = 0; i <= items.length; i++) {
+    total += items[i].price;
+  }
+  return total;
+}"
+            class="w-full bg-transparent p-4 font-mono text-[13px] leading-relaxed text-slate-300 placeholder:text-slate-600/70 focus:outline-none resize-y"></textarea>
+        </div>
+
+        <div class="flex items-center justify-between mt-2.5 px-1">
+          <p class="text-[11px] font-mono text-slate-600">
+            <span id="lineCount">0</span> рядків · <span id="charCount">0</span> символів
+          </p>
+          <button id="clearBtn" class="text-[11px] text-slate-500 hover:text-red-400 transition flex items-center gap-1">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 18 18 6M6 6l12 12"/></svg>
+            Очистити
+          </button>
+        </div>
+      </div>
+
+      <!-- Panel: github -->
+      <div id="panel-github" class="hidden p-4 sm:p-5">
+        <label for="repoUrl" class="block text-xs font-medium text-slate-400 uppercase tracking-wider mb-3">Посилання на репозиторій або файл</label>
+        <div class="relative">
+          <svg class="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-600" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" d="M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757m13.35-.622 1.757-1.757a4.5 4.5 0 0 0-6.364-6.364l-4.5 4.5a4.5 4.5 0 0 0 1.242 7.244"/></svg>
+          <input id="repoUrl" type="url" spellcheck="false" placeholder="https://github.com/facebook/react"
+            class="w-full bg-ink-900 border border-white/10 rounded-xl pl-10 pr-4 py-3.5 font-mono text-sm text-slate-300 placeholder:text-slate-600/70 focus:outline-none focus:border-sky-500/50 focus:ring-1 focus:ring-sky-500/20 transition" />
+        </div>
+
+        <div class="mt-3.5 space-y-2">
+          <p class="text-[11px] text-slate-500 font-medium">Приклади:</p>
+          <div class="flex flex-wrap gap-2">
+            <button class="example-btn" data-url="https://github.com/expressjs/express/blob/master/lib/application.js">Файл у репо</button>
+            <button class="example-btn" data-url="https://github.com/sindresorhus/slugify">Цілий репозиторій</button>
+            <button class="example-btn" data-url="https://raw.githubusercontent.com/nodejs/node/main/lib/events.js">raw-файл</button>
+          </div>
+        </div>
+
+        <p class="mt-4 text-[11px] leading-relaxed text-slate-500 border border-white/5 bg-ink-800/40 rounded-lg p-3">
+          💡 Підтримуються посилання <span class="code-inline">github.com/owner/repo</span>,
+          <span class="code-inline">…/blob/гілка/шлях</span> та
+          <span class="code-inline">raw.githubusercontent.com</span>.
+          Для репозиторію автоматично обираються до 6 найважливіших файлів із кодом.
+          Приватні репозиторії потребують <span class="code-inline">GITHUB_TOKEN</span> у <span class="code-inline">.env</span>.
+        </p>
+      </div>
+
+      <!-- Action -->
+      <div class="px-4 sm:px-5 pb-5">
+        <button id="analyzeBtn"
+          class="w-full relative overflow-hidden rounded-xl bg-gradient-to-r from-sky-500 to-indigo-500 py-4 font-semibold text-white text-[15px] tracking-tight shadow-lg shadow-sky-500/20 hover:from-sky-400 hover:to-indigo-400 active:scale-[.995] disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center gap-2.5">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z"/></svg>
+          <span id="analyzeBtnText">Проаналізувати код</span>
+        </button>
+        <p class="text-center text-[11px] text-slate-600 mt-2.5">Ctrl + Enter — швидкий запуск</p>
+      </div>
+    </section>
+
+    <!-- ══ ERROR ══ -->
+    <div id="errorBox" class="hidden mt-6 rounded-xl border border-red-500/30 bg-red-500/5 p-4 flex items-start gap-3 animate-fade-up">
+      <svg class="w-5 h-5 text-red-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"/></svg>
+      <div class="min-w-0">
+        <p class="text-sm font-medium text-red-300">Помилка</p>
+        <p id="errorText" class="text-sm text-red-200/70 mt-0.5 break-words"></p>
+      </div>
+    </div>
+
+    <!-- ══ LOADER ══ -->
+    <section id="loader" class="hidden mt-6 rounded-2xl border border-white/5 bg-ink-850/60 p-12 text-center animate-fade-up">
+      <div class="spinner mx-auto"></div>
+      <p class="mt-5 text-sm font-medium text-slate-300" id="loaderTitle">Аналізую код…</p>
+      <p class="mt-1 text-xs text-slate-500" id="loaderSub">DeepSeek читає ваш код і шукає проблеми</p>
+    </section>
+
+    <!-- ══ RESULTS ══ -->
+    <section id="results" class="hidden mt-6 space-y-5">
+
+      <!-- Summary bar -->
+      <div class="rounded-2xl border border-white/5 bg-ink-850/60 p-5 sm:p-6 animate-fade-up">
+        <div class="flex items-center gap-5 sm:gap-7 flex-wrap">
+          <div class="relative w-24 h-24 shrink-0">
+            <svg class="w-24 h-24 -rotate-90" viewBox="0 0 100 100">
+              <circle cx="50" cy="50" r="42" fill="none" stroke="#274369" stroke-width="8" />
+              <circle id="scoreRing" cx="50" cy="50" r="42" fill="none" stroke="#38bdf8" stroke-width="8"
+                stroke-linecap="round" stroke-dasharray="263.9" stroke-dashoffset="263.9"
+                style="transition: stroke-dashoffset 1s cubic-bezier(.4,0,.2,1), stroke .4s;" />
+            </svg>
+            <div class="absolute inset-0 grid place-items-center">
+              <div class="text-center leading-none">
+                <div id="scoreValue" class="text-2xl font-bold text-slate-100">–</div>
+                <div class="text-[9px] uppercase tracking-wider text-slate-500 mt-1">з 100</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex-1 min-w-[220px]">
+            <h2 id="verdict" class="text-base font-semibold text-slate-100 leading-snug">Аналіз завершено</h2>
+            <div id="metaLine" class="mt-2.5 flex flex-wrap items-center gap-2 text-[11px] font-mono text-slate-500"></div>
+          </div>
+
+          <div class="flex gap-2 ml-auto">
+            <button id="copyBtn" title="Копіювати звіт" class="px-3 py-2 rounded-lg border border-white/10 bg-ink-800 hover:bg-ink-700 text-slate-400 hover:text-slate-200 transition text-xs flex items-center gap-1.5">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75"/></svg>
+              Копіювати
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3 cards -->
+      <div class="grid gap-5 lg:grid-cols-3">
+
+        <!-- BUGS -->
+        <article id="card-bugs" class="rounded-2xl border border-red-500/20 bg-gradient-to-b from-red-500/[.07] to-transparent overflow-hidden animate-fade-up">
+          <header class="px-5 py-4 border-b border-red-500/15 flex items-center gap-3">
+            <span class="text-xl">🔴</span>
+            <div class="min-w-0 flex-1">
+              <h3 class="font-semibold text-red-300 text-sm leading-tight">Критичні баги</h3>
+              <p class="text-[11px] text-red-400/60">та потенційні помилки</p>
+            </div>
+            <span class="count-badge shrink-0 text-[11px] font-mono font-semibold text-red-300 bg-red-500/15 border border-red-500/25 rounded-full px-2 py-0.5">0</span>
+          </header>
+          <div class="p-5 space-y-4" data-body></div>
+        </article>
+
+        <!-- PERFORMANCE -->
+        <article id="card-performance" class="rounded-2xl border border-amber-500/20 bg-gradient-to-b from-amber-500/[.07] to-transparent overflow-hidden animate-fade-up" style="animation-delay:.06s">
+          <header class="px-5 py-4 border-b border-amber-500/15 flex items-center gap-3">
+            <span class="text-xl">🟡</span>
+            <div class="min-w-0 flex-1">
+              <h3 class="font-semibold text-amber-300 text-sm leading-tight">Оптимізація</h3>
+              <p class="text-[11px] text-amber-400/60">та швидкодія</p>
+            </div>
+            <span class="count-badge shrink-0 text-[11px] font-mono font-semibold text-amber-300 bg-amber-500/15 border border-amber-500/25 rounded-full px-2 py-0.5">0</span>
+          </header>
+          <div class="p-5 space-y-4" data-body></div>
+        </article>
+
+        <!-- CLEAN CODE -->
+        <article id="card-cleanCode" class="rounded-2xl border border-emerald-500/20 bg-gradient-to-b from-emerald-500/[.07] to-transparent overflow-hidden animate-fade-up" style="animation-delay:.12s">
+          <header class="px-5 py-4 border-b border-emerald-500/15 flex items-center gap-3">
+            <span class="text-xl">🟢</span>
+            <div class="min-w-0 flex-1">
+              <h3 class="font-semibold text-emerald-300 text-sm leading-tight">Стиль коду</h3>
+              <p class="text-[11px] text-emerald-400/60">та best practices</p>
+            </div>
+            <span class="count-badge shrink-0 text-[11px] font-mono font-semibold text-emerald-300 bg-emerald-500/15 border border-emerald-500/25 rounded-full px-2 py-0.5">0</span>
+          </header>
+          <div class="p-5 space-y-4" data-body></div>
+        </article>
+
+      </div>
+    </section>
+
+    <footer class="mt-14 pb-4 text-center text-[11px] text-slate-600">
+      AI Code Reviewer · Express + DeepSeek · Локальний запуск на <span class="font-mono">localhost:3000</span>
+    </footer>
+  </main>
+
+  <script>
+  (() => {
+    'use strict';
+
+    const $ = (sel) => document.querySelector(sel);
+
+    const els = {
+      tabBtns: document.querySelectorAll('.tab-btn'),
+      panelCode: $('#panel-code'),
+      panelGithub: $('#panel-github'),
+      code: $('#code'),
+      language: $('#language'),
+      repoUrl: $('#repoUrl'),
+      analyzeBtn: $('#analyzeBtn'),
+      analyzeBtnText: $('#analyzeBtnText'),
+      clearBtn: $('#clearBtn'),
+      lineCount: $('#lineCount'),
+      charCount: $('#charCount'),
+      loader: $('#loader'),
+      loaderTitle: $('#loaderTitle'),
+      loaderSub: $('#loaderSub'),
+      errorBox: $('#errorBox'),
+      errorText: $('#errorText'),
+      results: $('#results'),
+      scoreRing: $('#scoreRing'),
+      scoreValue: $('#scoreValue'),
+      verdict: $('#verdict'),
+      metaLine: $('#metaLine'),
+      copyBtn: $('#copyBtn'),
+      healthDot: $('#healthDot'),
+      healthText: $('#healthText'),
+    };
+
+    let activeTab = 'code';
+    let lastReport = null;
+    const CIRCUMFERENCE = 2 * Math.PI * 42;
+
+    // ── Tabs ─────────────────────────────────────────────────────────────
+    els.tabBtns.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        activeTab = btn.dataset.tab;
+        els.tabBtns.forEach((b) => b.classList.toggle('tab-active', b === btn));
+        els.panelCode.classList.toggle('hidden', activeTab !== 'code');
+        els.panelGithub.classList.toggle('hidden', activeTab !== 'github');
+        hideError();
+      });
+    });
+
+    document.querySelectorAll('.example-btn').forEach((btn) => {
+      btn.className = 'example-btn text-[11px] font-mono px-2.5 py-1.5 rounded-lg border border-white/10 bg-ink-800 hover:bg-ink-700 hover:border-sky-500/40 text-slate-400 hover:text-sky-300 transition';
+      btn.addEventListener('click', () => { els.repoUrl.value = btn.dataset.url; els.repoUrl.focus(); });
+    });
+
+    // ── Лічильники ───────────────────────────────────────────────────────
+    function updateCounts() {
+      const v = els.code.value;
+      els.charCount.textContent = v.length.toLocaleString('uk-UA');
+      els.lineCount.textContent = (v ? v.split('\n').length : 0).toLocaleString('uk-UA');
+    }
+    els.code.addEventListener('input', updateCounts);
+    updateCounts();
+
+    els.clearBtn.addEventListener('click', () => {
+      els.code.value = '';
+      updateCounts();
+      els.code.focus();
+    });
+
+    els.code.addEventListener('keydown', (e) => {
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        const s = els.code.selectionStart, en = els.code.selectionEnd;
+        els.code.value = els.code.value.slice(0, s) + '  ' + els.code.value.slice(en);
+        els.code.selectionStart = els.code.selectionEnd = s + 2;
+        updateCounts();
+      }
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); runAnalysis(); }
+    });
+
+    // ── Health ───────────────────────────────────────────────────────────
+    fetch('/api/health')
+      .then((r) => r.json())
+      .then((d) => {
+        els.healthDot.className = 'w-1.5 h-1.5 rounded-full ' + (d.apiKeyConfigured ? 'bg-emerald-500' : 'bg-amber-500');
+        els.healthText.textContent = d.apiKeyConfigured ? d.model : 'немає API-ключа';
+        els.healthText.title = d.apiKeyConfigured ? 'API-ключ налаштовано' : 'Впишіть DEEPSEEK_API_KEY у .env';
+      })
+      .catch(() => { els.healthText.textContent = 'сервер офлайн'; });
+
+    // ── Helpers ──────────────────────────────────────────────────────────
+    function escapeHtml(s) {
+      return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    /** Мінімальний markdown: **жирний**, `код`, - списки */
+    function mdInline(text) {
+      let s = escapeHtml(text);
+      s = s.replace(/`([^`\n]+)`/g, '<span class="code-inline">$1</span>');
+      s = s.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+      return s.replace(/\n/g, '<br>');
+    }
+
+    const SEVERITY = {
+      critical: ['Критично', 'text-red-300 bg-red-500/15 border-red-500/30'],
+      high:     ['Високий',  'text-orange-300 bg-orange-500/15 border-orange-500/30'],
+      medium:   ['Середній', 'text-amber-300 bg-amber-500/15 border-amber-500/30'],
+      low:      ['Низький',  'text-sky-300 bg-sky-500/15 border-sky-500/30'],
+    };
+
+    function showError(msg) {
+      els.errorText.textContent = msg;
+      els.errorBox.classList.remove('hidden');
+      els.errorBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    function hideError() { els.errorBox.classList.add('hidden'); }
+
+    // ── Рендер результатів ───────────────────────────────────────────────
+    function renderSection(cardId, section) {
+      const card = document.getElementById(cardId);
+      const body = card.querySelector('[data-body]');
+      const issues = section?.issues || [];
+
+      card.querySelector('.count-badge').textContent = issues.length;
+      body.innerHTML = '';
+
+      if (section?.summary) {
+        const p = document.createElement('p');
+        p.className = 'text-xs text-slate-400 leading-relaxed prose-mini';
+        p.innerHTML = mdInline(section.summary);
+        body.appendChild(p);
+      }
+
+      if (issues.length === 0) {
+        const ok = document.createElement('div');
+        ok.className = 'rounded-lg border border-dashed border-emerald-500/25 bg-emerald-500/[.04] px-4 py-5 text-center';
+        ok.innerHTML = '<div class="text-xl mb-1">✅</div><p class="text-xs text-emerald-300/70">Проблем не виявлено</p>';
+        body.appendChild(ok);
+        return;
+      }
+
+      issues.forEach((issue, idx) => {
+        const [label, colors] = SEVERITY[issue.severity] || SEVERITY.medium;
+        const item = document.createElement('div');
+        item.className = 'rounded-xl border border-white/5 bg-ink-900/60 p-3.5 hover:border-white/10 transition';
+
+        let html = `
+          <div class="flex items-start justify-between gap-2 mb-1.5">
+            <h4 class="text-[13px] font-semibold text-slate-200 leading-snug prose-mini">${mdInline(issue.title)}</h4>
+            <span class="shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded border ${colors}">${label}</span>
+          </div>`;
+
+        if (issue.location) {
+          html += `<div class="text-[10px] font-mono text-slate-500 mb-2 truncate" title="${escapeHtml(issue.location)}">📍 ${escapeHtml(issue.location)}</div>`;
+        }
+        if (issue.description) {
+          html += `<p class="text-xs text-slate-400 leading-relaxed prose-mini">${mdInline(issue.description)}</p>`;
+        }
+        if (issue.suggestion) {
+          html += `
+            <details class="mt-2.5 group">
+              <summary class="cursor-pointer text-[11px] font-medium text-sky-400/80 hover:text-sky-300 transition select-none list-none flex items-center gap-1">
+                <svg class="w-3 h-3 transition group-open:rotate-90" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/></svg>
+                Запропоноване виправлення
+              </summary>
+              <pre class="suggestion mt-2">${escapeHtml(issue.suggestion)}</pre>
+            </details>`;
+        }
+
+        item.innerHTML = html;
+        body.appendChild(item);
+        item.style.animation = `fadeUp .3s ease-out ${Math.min(idx * 0.04, 0.3)}s both`;
+      });
+    }
+
+    function renderResults(data) {
+      const a = data.analysis || {};
+      const meta = data.meta || {};
+
+      // Score
+      const score = typeof a.score === 'number' ? a.score : null;
+      els.scoreValue.textContent = score === null ? '–' : score;
+      const pct = score === null ? 0 : score / 100;
+      const color = score === null ? '#475569' : score >= 80 ? '#10b981' : score >= 50 ? '#f59e0b' : '#ef4444';
+      els.scoreRing.style.stroke = color;
+      els.scoreRing.style.strokeDasharray = String(CIRCUMFERENCE);
+      els.scoreRing.style.strokeDashoffset = String(CIRCUMFERENCE);
+      requestAnimationFrame(() => {
+        els.scoreRing.style.strokeDashoffset = String(CIRCUMFERENCE * (1 - pct));
+      });
+
+      els.verdict.textContent = a.verdict || 'Аналіз завершено';
+
+      // Meta chips
+      const chips = [];
+      if (a.language) chips.push(`🌐 ${a.language}`);
+      if (meta.analyzedLines) chips.push(`📄 ${meta.analyzedLines.toLocaleString('uk-UA')} рядків`);
+      if (meta.files?.length) chips.push(`📁 ${meta.files.length} файл(ів)`);
+      if (meta.model) chips.push(`⚙️ ${meta.model}`);
+      if (meta.usage?.total_tokens) chips.push(`🔤 ${meta.usage.total_tokens.toLocaleString('uk-UA')} токенів`);
+      els.metaLine.innerHTML = chips
+        .map((c) => `<span class="px-2 py-1 rounded-md border border-white/5 bg-ink-800/60">${escapeHtml(c)}</span>`)
+        .join('');
+
+      renderSection('card-bugs', a.bugs);
+      renderSection('card-performance', a.performance);
+      renderSection('card-cleanCode', a.cleanCode);
+
+      lastReport = data;
+      els.results.classList.remove('hidden');
+      els.results.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    // ── Копіювання / звіт ────────────────────────────────────────────────
+    function buildMarkdown(data) {
+      const a = data.analysis || {};
+      const meta = data.meta || {};
+      const sec = (title, s) => {
+        const lines = [`## ${title}`, '', s?.summary || '', ''];
+        (s?.issues || []).forEach((i, n) => {
+          lines.push(`${n + 1}. **${i.title}** _(${i.severity}${i.location ? ` · ${i.location}` : ''})_`);
+          if (i.description) lines.push(`   ${i.description}`);
+          if (i.suggestion) lines.push('', '   ```', ...String(i.suggestion).split('\n').map((l) => `   ${l}`), '   ```');
+          lines.push('');
+        });
+        return lines.join('\n');
+      };
+      return [
+        '# 🤖 AI Code Reviewer — звіт',
+        '',
+        `- **Джерело:** ${meta.source || '—'}`,
+        `- **Мова:** ${a.language || meta.language || '—'}`,
+        `- **Оцінка:** ${a.score ?? '—'}/100`,
+        `- **Модель:** ${meta.model || '—'}`,
+        '',
+        `> ${a.verdict || ''}`,
+        '',
+        sec('🔴 Критичні баги та потенційні помилки', a.bugs),
+        sec('🟡 Оптимізація та швидкодія', a.performance),
+        sec('🟢 Стиль коду та best practices', a.cleanCode),
+      ].join('\n');
+    }
+
+    els.copyBtn.addEventListener('click', async () => {
+      if (!lastReport) return;
+      const md = buildMarkdown(lastReport);
+      try {
+        await navigator.clipboard.writeText(md);
+      } catch {
+        const ta = document.createElement('textarea');
+        ta.value = md; document.body.appendChild(ta); ta.select();
+        document.execCommand('copy'); ta.remove();
+      }
+      const original = els.copyBtn.innerHTML;
+      els.copyBtn.innerHTML = '<span class="text-emerald-400">✓ Скопійовано</span>';
+      setTimeout(() => { els.copyBtn.innerHTML = original; }, 1600);
+    });
+
+    // ── Основний запит ───────────────────────────────────────────────────
+    function setLoading(on) {
+      els.loader.classList.toggle('hidden', !on);
+      els.analyzeBtn.disabled = on;
+      els.analyzeBtnText.textContent = on ? 'Аналізую…' : 'Проаналізувати код';
+      return on;
+    }
+
+    async function runAnalysis() {
+      hideError();
+      els.results.classList.add('hidden');
+
+      let payload;
+      if (activeTab === 'code') {
+        const code = els.code.value;
+        if (!code.trim()) return showError('Вставте код у поле вище — аналізувати нічого.');
+        payload = { type: 'code', code, language: els.language.value };
+        els.loaderSub.textContent = 'DeepSeek читає ваш код і шукає проблеми';
+      } else {
+        const url = els.repoUrl.value.trim();
+        if (!url) return showError('Вставте посилання на GitHub-репозиторій або файл.');
+        payload = { type: 'githubUrl', url };
+        els.loaderSub.textContent = 'Завантажую файли з GitHub та аналізую їх';
+      }
+
+      setLoading(true);
+      els.loader.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+      const startedAt = Date.now();
+      try {
+        const res = await fetch('/api/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `Помилка сервера (HTTP ${res.status})`);
+
+        setLoading(false);
+        renderResults(data);
+        console.log(`✅ Аналіз завершено за ${((Date.now() - startedAt) / 1000).toFixed(1)} с`);
+      } catch (err) {
+        setLoading(false);
+        showError(err.message || 'Невідома помилка. Перевірте, чи запущений сервер.');
+      }
+    }
+
+    els.analyzeBtn.addEventListener('click', runAnalysis);
+  })();
+  </script>
+</body>
+</html>
